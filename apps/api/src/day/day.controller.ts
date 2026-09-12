@@ -1,19 +1,13 @@
-import { Body, Controller, Get, Post, Query } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Param, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { IsIn, IsOptional, IsString, Matches, MaxLength, MinLength } from "class-validator";
+import { AuthGuard, type AuthenticatedRequest } from "../auth/auth.guard.js";
 import { DayService } from "./day.service.js";
 
-class DateDto {
+class CreateGoalDto {
   @IsString()
   @Matches(/^\d{4}-\d{2}-\d{2}$/)
-  date!: string;
-}
+  setDate!: string;
 
-class GoalActionDto extends DateDto {
-  @IsString()
-  goalId!: string;
-}
-
-class CreateGoalDto extends DateDto {
   @IsString()
   @MinLength(2)
   @MaxLength(180)
@@ -25,7 +19,7 @@ class CreateGoalDto extends DateDto {
   note?: string;
 }
 
-class StatusDto extends GoalActionDto {
+class StatusDto {
   @IsString()
   @IsIn(["FOCUS", "BREAK", "DISTRACTION", "SWITCH"])
   status!: "FOCUS" | "BREAK" | "DISTRACTION" | "SWITCH";
@@ -36,38 +30,47 @@ class StatusDto extends GoalActionDto {
   reason?: string;
 }
 
-@Controller("day")
+@UseGuards(AuthGuard)
+@Controller("goals")
 export class DayController {
   constructor(private readonly day: DayService) {}
 
-  @Get("today")
-  async today(@Query("date") date: string) {
-    return this.day.getToday(date);
+  @Get()
+  queue(@Req() request: AuthenticatedRequest) {
+    return this.day.getQueue(request.userId);
   }
 
-  @Post("today")
-  async create(@Body() dto: CreateGoalDto) {
-    return { goal: await this.day.create(dto) };
-  }
-
-  @Post("today/start")
-  async start(@Body() dto: GoalActionDto) {
-    return { goal: await this.day.start(dto.date, dto.goalId) };
-  }
-
-  @Post("today/status")
-  async status(@Body() dto: StatusDto) {
-    return { goal: await this.day.changeStatus(dto.date, dto.goalId, dto.status, dto.reason) };
-  }
-
-  @Post("today/complete")
-  async complete(@Body() dto: GoalActionDto) {
-    const result = await this.day.complete(dto.date, dto.goalId);
-    return { goal: result.completed, nextGoal: result.nextGoal };
+  @Post()
+  async create(@Req() request: AuthenticatedRequest, @Body() dto: CreateGoalDto) {
+    return { goal: await this.day.create(request.userId, dto) };
   }
 
   @Get("history")
-  async history() {
-    return { goals: await this.day.history() };
+  async history(@Req() request: AuthenticatedRequest) {
+    return { goals: await this.day.history(request.userId) };
+  }
+
+  @Get("reports/:period")
+  report(@Req() request: AuthenticatedRequest, @Param("period") period: string, @Query("anchor") anchor: string) {
+    if (period !== "week" && period !== "month" && period !== "year") {
+      throw new BadRequestException("Report period must be week, month, or year");
+    }
+    return this.day.periodReport(request.userId, period, anchor);
+  }
+
+  @Post(":goalId/start")
+  async start(@Req() request: AuthenticatedRequest, @Param("goalId") goalId: string) {
+    return { goal: await this.day.start(request.userId, goalId) };
+  }
+
+  @Post(":goalId/status")
+  async status(@Req() request: AuthenticatedRequest, @Param("goalId") goalId: string, @Body() dto: StatusDto) {
+    return { goal: await this.day.changeStatus(request.userId, goalId, dto.status, dto.reason) };
+  }
+
+  @Post(":goalId/complete")
+  async complete(@Req() request: AuthenticatedRequest, @Param("goalId") goalId: string) {
+    const result = await this.day.complete(request.userId, goalId);
+    return { goal: result.completed, nextGoal: result.nextGoal };
   }
 }

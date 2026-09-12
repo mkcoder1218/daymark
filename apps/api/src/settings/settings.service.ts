@@ -15,23 +15,34 @@ export class SettingsService {
     };
   }
 
-  async getTelegram() {
-    const settings = await this.prisma.appSettings.upsert({
-      where: { id: "primary" },
-      create: { id: "primary" },
-      update: {},
-    });
+  async getTelegram(userId: string) {
+    const existing = await this.prisma.appSettings.findUnique({ where: { userId } });
+    const settings = existing ?? (await this.prisma.appSettings.create({ data: { userId } }));
     return this.view(settings);
   }
 
-  async updateTelegram(input: { enabled: boolean; chatId: string; botToken?: string }) {
-    const existing = await this.prisma.appSettings.findUnique({ where: { id: "primary" } });
+  async updateTelegram(userId: string, input: { enabled: boolean; chatId: string; botToken?: string }) {
+    const existing = await this.prisma.appSettings.findUnique({ where: { userId } });
     const encrypted = input.botToken?.trim() ? encryptSecret(input.botToken.trim()) : existing?.telegramBotTokenEncrypted ?? null;
-    const settings = await this.prisma.appSettings.upsert({
-      where: { id: "primary" },
-      create: { id: "primary", telegramEnabled: input.enabled, telegramChatId: input.chatId.trim() || null, telegramBotTokenEncrypted: encrypted },
-      update: { telegramEnabled: input.enabled, telegramChatId: input.chatId.trim() || null, telegramBotTokenEncrypted: encrypted },
-    });
+
+    const settings = existing
+      ? await this.prisma.appSettings.update({
+          where: { id: existing.id },
+          data: {
+            telegramEnabled: input.enabled,
+            telegramChatId: input.chatId.trim() || null,
+            telegramBotTokenEncrypted: encrypted,
+          },
+        })
+      : await this.prisma.appSettings.create({
+          data: {
+            userId,
+            telegramEnabled: input.enabled,
+            telegramChatId: input.chatId.trim() || null,
+            telegramBotTokenEncrypted: encrypted,
+          },
+        });
+
     return this.view(settings);
   }
 }

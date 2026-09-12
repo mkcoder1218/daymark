@@ -8,8 +8,8 @@ export class TelegramService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async send(message: string, force = false) {
-    const settings = await this.prisma.appSettings.findUnique({ where: { id: "primary" } });
+  async send(userId: string, message: string, force = false) {
+    const settings = await this.prisma.appSettings.findUnique({ where: { userId } });
     if (!settings?.telegramBotTokenEncrypted || !settings.telegramChatId) {
       if (force) throw new Error("Telegram bot token and chat ID must be configured first");
       return { ok: false, skipped: true };
@@ -32,9 +32,9 @@ export class TelegramService {
     return { ok: true, skipped: false };
   }
 
-  async safelySend(message: string) {
+  async safelySend(userId: string, message: string) {
     try {
-      await this.send(message);
+      await this.send(userId, message);
     } catch (error) {
       this.logger.warn(error instanceof Error ? error.message : "Telegram notification failed");
     }
