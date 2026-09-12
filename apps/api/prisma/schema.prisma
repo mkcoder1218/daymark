@@ -22,7 +22,8 @@ enum ActivityType {
 
 model Goal {
   id          String       @id @default(cuid())
-  goalDate    String       @unique
+  goalDate    String
+  sequence    Int
   title       String
   note        String?
   status      GoalStatus   @default(PLANNED)
@@ -32,6 +33,8 @@ model Goal {
   updatedAt   DateTime     @updatedAt
   activities  Activity[]
 
+  @@unique([goalDate, sequence])
+  @@index([goalDate, status])
   @@index([createdAt])
 }
 

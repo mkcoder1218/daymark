@@ -13,6 +13,7 @@ export interface ActivityView {
 export interface GoalView {
   id: string;
   goalDate: string;
+  sequence: number;
   title: string;
   note: string | null;
   status: GoalStatus;
@@ -29,6 +30,11 @@ export interface GoalView {
   activities: ActivityView[];
 }
 
+export interface TodayView {
+  goals: GoalView[];
+  currentGoal: GoalView | null;
+}
+
 export interface TelegramSettings {
   enabled: boolean;
   chatId: string;
@@ -37,12 +43,11 @@ export interface TelegramSettings {
 }
 
 const configuredApiUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
+const legacyLocalApi = /^http:\/\/(?:localhost|127\.0\.0\.1):3001(?:\/v1)?\/?$/i;
 const API_URL = (
-  configuredApiUrl
-    ? configuredApiUrl.startsWith("/") && process.env.NODE_ENV === "development"
-      ? `http://localhost:3001${configuredApiUrl}`
-      : configuredApiUrl
-    : "http://localhost:3001/v1"
+  process.env.NODE_ENV === "development" && (!configuredApiUrl || configuredApiUrl.startsWith("/") || legacyLocalApi.test(configuredApiUrl))
+    ? "http://localhost:4000/v1"
+    : configuredApiUrl || "http://localhost:4000/v1"
 ).replace(/\/$/, "");
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -65,26 +70,26 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const daymarkApi = {
-  today: (date: string) => request<{ goal: GoalView | null }>(`/day/today?date=${encodeURIComponent(date)}`),
+  today: (date: string) => request<TodayView>(`/day/today?date=${encodeURIComponent(date)}`),
   createGoal: (date: string, title: string, note: string) =>
     request<{ goal: GoalView }>("/day/today", {
       method: "POST",
       body: JSON.stringify({ date, title, note: note || undefined }),
     }),
-  startGoal: (date: string) =>
+  startGoal: (date: string, goalId: string) =>
     request<{ goal: GoalView }>("/day/today/start", {
       method: "POST",
-      body: JSON.stringify({ date }),
+      body: JSON.stringify({ date, goalId }),
     }),
-  setStatus: (date: string, status: ActivityType, reason?: string) =>
+  setStatus: (date: string, goalId: string, status: ActivityType, reason?: string) =>
     request<{ goal: GoalView }>("/day/today/status", {
       method: "POST",
-      body: JSON.stringify({ date, status, reason }),
+      body: JSON.stringify({ date, goalId, status, reason }),
     }),
-  completeGoal: (date: string) =>
-    request<{ goal: GoalView }>("/day/today/complete", {
+  completeGoal: (date: string, goalId: string) =>
+    request<{ goal: GoalView; nextGoal: GoalView | null }>("/day/today/complete", {
       method: "POST",
-      body: JSON.stringify({ date }),
+      body: JSON.stringify({ date, goalId }),
     }),
   history: () => request<{ goals: GoalView[] }>("/day/history"),
   telegramSettings: () => request<TelegramSettings>("/settings/telegram"),

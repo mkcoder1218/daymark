@@ -1,6 +1,6 @@
 # Daymark
 
-Daymark is a personal daily-execution system: define one meaningful goal, work until it is achieved, and measure the cost of every break, distraction, and intentional switch.
+Daymark is a personal daily-execution system: queue the outcomes that matter, work them in sequence, and measure the cost of every break, distraction, and intentional switch.
 
 ## Stack
 
@@ -22,8 +22,12 @@ pnpm db:migrate
 pnpm dev
 ```
 
-Web: `http://localhost:3000`
-API: `http://localhost:3001/v1`
+Next.js normally starts on `http://localhost:3000` and may move to `3001` if that port is occupied.
+The NestJS API intentionally uses `http://localhost:4000/v1` in local development so it cannot collide with Next.js.
+
+## Daily goal sequence
+
+A day can contain multiple goals. Goals receive an automatic sequence number in creation order. Only one goal can be active at a time, and a later goal cannot start until every earlier goal is completed.
 
 ## Environment
 
@@ -37,9 +41,9 @@ The root `.env` is loaded by Next.js, NestJS, and Prisma during local developmen
 
 - `DATABASE_URL`: PostgreSQL runtime connection string. A Neon pooled connection URL is recommended for deployment.
 - `DIRECT_URL`: optional direct PostgreSQL URL for Prisma migrations. Leave blank to reuse `DATABASE_URL`.
-- `WEB_ORIGIN`: comma-separated allowed web origins for the API.
+- `API_PORT`: local NestJS API port, defaults to `4000`.
+- `WEB_ORIGIN`: comma-separated allowed production web origins. Common localhost origins are also allowed during development.
 - `SETTINGS_ENCRYPTION_KEY`: long random secret used to encrypt the Telegram bot token before it is stored.
-- `PORT`: local NestJS API port, defaults to `3001`.
 - `NEXT_PUBLIC_API_URL`: API base URL including `/v1`.
 
 Use `.env.example` as the complete template. Never commit the real `.env` file.
@@ -54,6 +58,8 @@ Create two Vercel projects from the same repository:
 The root `.env` is for local development only. In Vercel, add the same variables through each project's Environment Variables settings:
 
 - Web project: `NEXT_PUBLIC_API_URL`
-- API project: `DATABASE_URL`, optional `DIRECT_URL`, `WEB_ORIGIN`, `SETTINGS_ENCRYPTION_KEY`, and `PORT` when needed
+- API project: `DATABASE_URL`, optional `DIRECT_URL`, `WEB_ORIGIN`, and `SETTINGS_ENCRYPTION_KEY`
 
-Vercel supports NestJS directly. Run `pnpm --filter @daymark/api db:deploy` against the production database when schema migrations change.
+Vercel supplies its own runtime `PORT` in production. Daymark uses `API_PORT` only for local development.
+
+Run `pnpm --filter @daymark/api db:deploy` against the production database when schema migrations change.

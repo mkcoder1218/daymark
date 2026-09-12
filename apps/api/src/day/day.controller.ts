@@ -8,6 +8,11 @@ class DateDto {
   date!: string;
 }
 
+class GoalActionDto extends DateDto {
+  @IsString()
+  goalId!: string;
+}
+
 class CreateGoalDto extends DateDto {
   @IsString()
   @MinLength(2)
@@ -20,7 +25,7 @@ class CreateGoalDto extends DateDto {
   note?: string;
 }
 
-class StatusDto extends DateDto {
+class StatusDto extends GoalActionDto {
   @IsString()
   @IsIn(["FOCUS", "BREAK", "DISTRACTION", "SWITCH"])
   status!: "FOCUS" | "BREAK" | "DISTRACTION" | "SWITCH";
@@ -37,7 +42,7 @@ export class DayController {
 
   @Get("today")
   async today(@Query("date") date: string) {
-    return { goal: await this.day.getByDate(date) };
+    return this.day.getToday(date);
   }
 
   @Post("today")
@@ -46,18 +51,19 @@ export class DayController {
   }
 
   @Post("today/start")
-  async start(@Body() dto: DateDto) {
-    return { goal: await this.day.start(dto.date) };
+  async start(@Body() dto: GoalActionDto) {
+    return { goal: await this.day.start(dto.date, dto.goalId) };
   }
 
   @Post("today/status")
   async status(@Body() dto: StatusDto) {
-    return { goal: await this.day.changeStatus(dto.date, dto.status, dto.reason) };
+    return { goal: await this.day.changeStatus(dto.date, dto.goalId, dto.status, dto.reason) };
   }
 
   @Post("today/complete")
-  async complete(@Body() dto: DateDto) {
-    return { goal: await this.day.complete(dto.date) };
+  async complete(@Body() dto: GoalActionDto) {
+    const result = await this.day.complete(dto.date, dto.goalId);
+    return { goal: result.completed, nextGoal: result.nextGoal };
   }
 
   @Get("history")

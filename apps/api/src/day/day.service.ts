@@ -39,6 +39,7 @@ export class DayService {
     return {
       id: goal.id,
       goalDate: goal.goalDate,
+      sequence: goal.sequence,
       title: goal.title,
       note: goal.note,
       status: goal.status,
@@ -62,46 +63,81 @@ export class DayService {
     return goal;
   }
 
-  async getByDate(date: string) {
+  private async goalsForDate(date: string) {
+    return this.prisma.goal.findMany({
+      where: { goalDate: date },
+      include: { activities: true },
+      orderBy: { sequence: "asc" },
+    });
+  }
+
+  async getToday(date: string) {
     this.assertDate(date);
-    const goal = await this.prisma.goal.findUnique({ where: { goalDate: date }, include: { activities: true } });
-    return goal ? this.serialize(goal) : null;
+    const goals = await this.goalsForDate(date);
+    const current = goals.find((goal) => goal.status === "ACTIVE") ?? goals.find((goal) => goal.status === "PLANNED") ?? goals.at(-1) ?? null;
+    return {
+      goals: goals.map((goal) => this.serialize(goal)),
+      currentGoal: current ? this.serialize(current) : null,
+    };
   }
 
   async create(input: { date: string; title: string; note?: string }) {
     this.assertDate(input.date);
-    const existing = await this.prisma.goal.findUnique({ where: { goalDate: input.date } });
-    if (existing?.status === "ACTIVE" || existing?.status === "COMPLETED") throw new BadRequestException("Today already has a committed goal");
+    const title = input.title.trim();
+    if (!title) throw new BadRequestException("Goal title is required");
 
-    const goal = await this.prisma.goal.upsert({
+    const max = await this.prisma.goal.aggregate({
       where: { goalDate: input.date },
-      create: { goalDate: input.date, title: input.title.trim(), note: input.note?.trim() || null },
-      update: { title: input.title.trim(), note: input.note?.trim() || null },
+      _max: { sequence: true },
+    });
+
+    const goal = await this.prisma.goal.create({
+      data: {
+        goalDate: input.date,
+        sequence: (max._max.sequence ?? 0) + 1,
+        title,
+        note: input.note?.trim() || null,
+      },
       include: { activities: true },
     });
+
     return this.serialize(goal);
   }
 
-  async start(date: string) {
+  async start(date: string, goalId: string) {
     this.assertDate(date);
-    const goal = await this.prisma.goal.findUnique({ where: { goalDate: date } });
-    if (!goal) throw new NotFoundException("Set today's goal first");
-    if (goal.status === "COMPLETED") throw new BadRequestException("Today's goal is already complete");
-    if (goal.status === "ACTIVE") return this.serialize(await this.fullGoal(goal.id));
+    const goal = await this.fullGoal(goalId);
+    if (goal.goalDate !== date) throw new BadRequestException("Goal does not belong to this day");
+    if (goal.status === "COMPLETED") throw new BadRequestException("This goal is already complete");
+    if (goal.status === "ACTIVE") return this.serialize(goal);
+
+    const active = await this.prisma.goal.findFirst({ where: { goalDate: date, status: "ACTIVE" } });
+    if (active && active.id !== goal.id) throw new BadRequestException("Finish the active goal before starting another one");
+
+    const previousIncomplete = await this.prisma.goal.findFirst({
+      where: {
+        goalDate: date,
+        sequence: { lt: goal.sequence },
+        status: { not: "COMPLETED" },
+      },
+      orderBy: { sequence: "asc" },
+    });
+    if (previousIncomplete) throw new BadRequestException(`Finish goal ${previousIncomplete.sequence} before starting goal ${goal.sequence}`);
 
     const startedAt = new Date();
     await this.prisma.$transaction([
       this.prisma.goal.update({ where: { id: goal.id }, data: { status: "ACTIVE", startedAt } }),
       this.prisma.activity.create({ data: { goalId: goal.id, type: "FOCUS", startedAt } }),
     ]);
-    await this.telegram.safelySend(`🟢 Daymark\n\nGoal started\n${goal.title}`);
+
+    await this.telegram.safelySend(`🟢 Daymark\n\nGoal ${goal.sequence} started\n${goal.title}`);
     return this.serialize(await this.fullGoal(goal.id));
   }
 
-  async changeStatus(date: string, status: ActivityType, reason?: string) {
+  async changeStatus(date: string, goalId: string, status: ActivityType, reason?: string) {
     this.assertDate(date);
-    const goal = await this.prisma.goal.findUnique({ where: { goalDate: date }, include: { activities: true } });
-    if (!goal) throw new NotFoundException("Today's goal does not exist");
+    const goal = await this.fullGoal(goalId);
+    if (goal.goalDate !== date) throw new BadRequestException("Goal does not belong to this day");
     if (goal.status !== "ACTIVE") throw new BadRequestException("The goal must be active before changing status");
 
     const open = goal.activities.find((activity) => !activity.endedAt);
@@ -120,15 +156,18 @@ export class DayService {
       SWITCH: "🟡 Intentional switch",
     };
     const detail = reason?.trim() ? `\nReason: ${reason.trim()}` : "";
-    await this.telegram.safelySend(`${labels[status]}\n${goal.title}${detail}`);
+    await this.telegram.safelySend(`${labels[status]}\nGoal ${goal.sequence}: ${goal.title}${detail}`);
     return this.serialize(await this.fullGoal(goal.id));
   }
 
-  async complete(date: string) {
+  async complete(date: string, goalId: string) {
     this.assertDate(date);
-    const goal = await this.prisma.goal.findUnique({ where: { goalDate: date }, include: { activities: true } });
-    if (!goal) throw new NotFoundException("Today's goal does not exist");
-    if (goal.status === "COMPLETED") return this.serialize(goal);
+    const goal = await this.fullGoal(goalId);
+    if (goal.goalDate !== date) throw new BadRequestException("Goal does not belong to this day");
+    if (goal.status === "COMPLETED") {
+      const nextGoal = await this.nextGoal(date, goal.sequence);
+      return { completed: this.serialize(goal), nextGoal: nextGoal ? this.serialize(nextGoal) : null };
+    }
     if (goal.status !== "ACTIVE") throw new BadRequestException("Start the goal before completing it");
 
     const now = new Date();
@@ -139,13 +178,26 @@ export class DayService {
     });
 
     const completed = this.serialize(await this.fullGoal(goal.id));
-    await this.telegram.safelySend(`🎯 Daymark — goal achieved\n\n${goal.title}\n\nFocused: ${this.readable(completed.focusedMs)}\nElapsed: ${this.readable(completed.elapsedMs)}\nInterruptions: ${completed.interruptions}\nLongest run: ${this.readable(completed.longestFocusMs)}`);
-    return completed;
+    const nextGoal = await this.nextGoal(date, goal.sequence);
+    await this.telegram.safelySend(`🎯 Daymark — goal ${goal.sequence} achieved\n\n${goal.title}\n\nFocused: ${this.readable(completed.focusedMs)}\nElapsed: ${this.readable(completed.elapsedMs)}\nInterruptions: ${completed.interruptions}\nLongest run: ${this.readable(completed.longestFocusMs)}${nextGoal ? `\n\nNext: Goal ${nextGoal.sequence} — ${nextGoal.title}` : ""}`);
+    return { completed, nextGoal: nextGoal ? this.serialize(nextGoal) : null };
   }
 
   async history() {
-    const goals = await this.prisma.goal.findMany({ include: { activities: true }, orderBy: { goalDate: "desc" }, take: 60 });
+    const goals = await this.prisma.goal.findMany({
+      include: { activities: true },
+      orderBy: [{ goalDate: "desc" }, { sequence: "asc" }],
+      take: 120,
+    });
     return goals.map((goal) => this.serialize(goal));
+  }
+
+  private async nextGoal(date: string, sequence: number) {
+    return this.prisma.goal.findFirst({
+      where: { goalDate: date, sequence: { gt: sequence }, status: "PLANNED" },
+      include: { activities: true },
+      orderBy: { sequence: "asc" },
+    });
   }
 
   private readable(ms: number) {

@@ -12,10 +12,7 @@ const switchReasons = ["Coding agent running", "Urgent project", "Waiting on dep
 
 function localDateKey() {
   const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
 function formatDuration(ms: number, includeSeconds = false) {
@@ -25,8 +22,7 @@ function formatDuration(ms: number, includeSeconds = false) {
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
   if (includeSeconds) return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-  if (hours > 0) return `${hours}h ${String(minutes).padStart(2, "0")}m`;
-  return `${minutes}m`;
+  return hours > 0 ? `${hours}h ${String(minutes).padStart(2, "0")}m` : `${minutes}m`;
 }
 
 function formatShortDate(date: string) {
@@ -39,6 +35,12 @@ function statusLabel(status: ActivityType | null) {
   if (status === "BREAK") return "On break";
   if (status === "DISTRACTION") return "Distracted";
   return "Intentional switch";
+}
+
+function goalStateLabel(goal: GoalView) {
+  if (goal.status === "COMPLETED") return "Done";
+  if (goal.status === "ACTIVE") return statusLabel(goal.currentStatus);
+  return "Queued";
 }
 
 function Icon({ name }: { name: "today" | "history" | "settings" | "focus" | "break" | "distract" | "switch" | "check" }) {
@@ -56,6 +58,7 @@ function Icon({ name }: { name: "today" | "history" | "settings" | "focus" | "br
 export function DaymarkApp() {
   const [view, setView] = useState<ViewName>("today");
   const [goal, setGoal] = useState<GoalView | null>(null);
+  const [goals, setGoals] = useState<GoalView[]>([]);
   const [history, setHistory] = useState<GoalView[]>([]);
   const [telegram, setTelegram] = useState<TelegramSettings | null>(null);
   const [loading, setLoading] = useState(true);
@@ -85,7 +88,8 @@ export function DaymarkApp() {
 
   const refreshToday = useCallback(async () => {
     const response = await daymarkApi.today(date);
-    setGoal(response.goal);
+    setGoals(response.goals);
+    setGoal(response.currentGoal);
   }, [date]);
 
   useEffect(() => {
@@ -100,20 +104,17 @@ export function DaymarkApp() {
   useLayoutEffect(() => {
     const root = rootRef.current;
     if (!root || loading) return;
-
     const ctx = gsap.context(() => {
       const timeline = gsap.timeline({ defaults: { ease: "power3.out" } });
       const rail = root.querySelector<HTMLElement>(".rail");
       const topbar = root.querySelector<HTMLElement>(".topbar");
       const intro = root.querySelectorAll<HTMLElement>(".intro-reveal");
       const sideSections = root.querySelectorAll<HTMLElement>(".side-section");
-
       if (rail) timeline.from(rail, { x: -34, opacity: 0, duration: 0.65 });
       if (topbar) timeline.from(topbar, { y: -20, opacity: 0, duration: 0.55 }, rail ? "<0.12" : undefined);
       if (intro.length) timeline.from(intro, { y: 36, opacity: 0, duration: 0.72, stagger: 0.075 }, "<0.08");
       if (sideSections.length) timeline.from(sideSections, { x: 24, opacity: 0, duration: 0.55, stagger: 0.09 }, "<0.18");
     }, root);
-
     return () => ctx.revert();
   }, [loading]);
 
@@ -125,11 +126,11 @@ export function DaymarkApp() {
   useLayoutEffect(() => {
     const currentView = viewRef.current;
     if (!currentView) return;
-    const selector = view === "history" ? ".history-row" : view === "settings" ? ".field, .form-actions" : ".metric, .activity-row";
+    const selector = view === "history" ? ".history-row" : view === "settings" ? ".field, .form-actions" : ".metric, .activity-row, .sequence-item";
     const targets = currentView.querySelectorAll<HTMLElement>(selector);
     if (!targets.length) return;
     gsap.fromTo(targets, { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.42, stagger: 0.035, ease: "power3.out", clearProps: "transform" });
-  }, [view, history.length, telegram?.tokenConfigured]);
+  }, [view, history.length, goals.length, telegram?.tokenConfigured]);
 
   useLayoutEffect(() => {
     if (!modalRef.current || (!goalModal && !reasonMode)) return;
@@ -143,7 +144,11 @@ export function DaymarkApp() {
     if (!completion || !completionRef.current) return;
     const ctx = gsap.context(() => {
       const tl = gsap.timeline();
-      tl.fromTo(".completion-layer", { clipPath: "inset(100% 0 0 0)" }, { clipPath: "inset(0% 0 0 0)", duration: 0.7, ease: "power4.inOut" }).from(".completion-kicker", { y: 18, opacity: 0, duration: 0.4 }, "-=0.15").from(".completion-title", { y: 70, opacity: 0, rotateX: -18, duration: 0.8, ease: "power4.out" }, "-=0.15").from(".completion-summary", { y: 18, opacity: 0, duration: 0.45 }, "-=0.35").fromTo(".spark", { scaleY: 0, opacity: 0 }, { scaleY: 1, opacity: 1, duration: 0.55, stagger: 0.018, ease: "power2.out" }, "-=0.7");
+      tl.fromTo(".completion-layer", { clipPath: "inset(100% 0 0 0)" }, { clipPath: "inset(0% 0 0 0)", duration: 0.7, ease: "power4.inOut" })
+        .from(".completion-kicker", { y: 18, opacity: 0, duration: 0.4 }, "-=0.15")
+        .from(".completion-title", { y: 70, opacity: 0, rotateX: -18, duration: 0.8, ease: "power4.out" }, "-=0.15")
+        .from(".completion-summary", { y: 18, opacity: 0, duration: 0.45 }, "-=0.35")
+        .fromTo(".spark", { scaleY: 0, opacity: 0 }, { scaleY: 1, opacity: 1, duration: 0.55, stagger: 0.018, ease: "power2.out" }, "-=0.7");
       gsap.to(".spark", { rotation: "+=28", duration: 4.5, ease: "none", repeat: -1 });
     }, completionRef);
     return () => ctx.revert();
@@ -153,8 +158,7 @@ export function DaymarkApp() {
     if (!goal) return 0;
     if (goal.status !== "ACTIVE" || goal.currentStatus !== "FOCUS") return goal.focusedMs;
     const open = [...goal.activities].reverse().find((activity) => activity.type === "FOCUS" && !activity.endedAt);
-    if (!open) return goal.focusedMs;
-    return goal.focusedMs + Math.max(0, now - new Date(open.startedAt).getTime());
+    return open ? goal.focusedMs + Math.max(0, now - new Date(open.startedAt).getTime()) : goal.focusedMs;
   }, [goal, now]);
 
   const animateAction = (target: HTMLElement) => {
@@ -165,8 +169,8 @@ export function DaymarkApp() {
     if (busy) return;
     setBusy(true);
     try {
-      const response = await action();
-      setGoal(response.goal);
+      await action();
+      await refreshToday();
       if (timerRef.current) gsap.fromTo(timerRef.current, { opacity: 0.45, y: 7 }, { opacity: 1, y: 0, duration: 0.42, ease: "power3.out" });
       if (message) showToast(message);
     } catch (error) {
@@ -179,14 +183,16 @@ export function DaymarkApp() {
   const createGoal = async () => {
     const title = goalTitle.trim();
     if (!title) return;
+    const shouldStartImmediately = goals.length === 0;
     setBusy(true);
     try {
-      await daymarkApi.createGoal(date, title, goalNote.trim());
-      const started = await daymarkApi.startGoal(date);
-      setGoal(started.goal);
+      const created = await daymarkApi.createGoal(date, title, goalNote.trim());
+      if (shouldStartImmediately) await daymarkApi.startGoal(date, created.goal.id);
+      await refreshToday();
       setGoalModal(false);
       setGoalTitle("");
       setGoalNote("");
+      showToast(shouldStartImmediately ? "First goal started." : `Goal ${created.goal.sequence} added to the sequence.`);
     } catch (error) {
       showToast(error instanceof Error ? error.message : "Could not create goal");
     } finally {
@@ -195,20 +201,21 @@ export function DaymarkApp() {
   };
 
   const chooseReason = async (reason: string) => {
-    if (!reasonMode) return;
+    if (!reasonMode || !goal) return;
     const status = reasonMode;
     setReasonMode(null);
     setCustomReason("");
-    await run(() => daymarkApi.setStatus(date, status, reason), status === "DISTRACTION" ? "Distraction recorded." : "Intentional switch recorded.");
+    await run(() => daymarkApi.setStatus(date, goal.id, status, reason), status === "DISTRACTION" ? "Distraction recorded." : "Intentional switch recorded.");
   };
 
   const complete = async () => {
     if (!goal || busy) return;
     setBusy(true);
     try {
-      const response = await daymarkApi.completeGoal(date);
-      setGoal(response.goal);
+      const response = await daymarkApi.completeGoal(date, goal.id);
       setCompletion(response.goal);
+      await refreshToday();
+      if (response.nextGoal) showToast(`Goal ${response.nextGoal.sequence} is next.`);
     } catch (error) {
       showToast(error instanceof Error ? error.message : "Could not complete goal");
     } finally {
@@ -220,6 +227,7 @@ export function DaymarkApp() {
     if (event) animateAction(event.currentTarget);
     setView(next);
     try {
+      if (next === "today") await refreshToday();
       if (next === "history") {
         const response = await daymarkApi.history();
         setHistory(response.goals);
@@ -280,36 +288,39 @@ export function DaymarkApp() {
       <main className="main">
         <header className="topbar"><div className="topbar-kicker">Daymark / {view}</div><div className="topbar-date">{new Intl.DateTimeFormat("en", { weekday: "long", month: "long", day: "numeric" }).format(new Date())}</div></header>
         <div className="view" ref={viewRef}>
-          {view === "today" && !goal && <section className="empty-stage"><div className="eyebrow intro-reveal">Today has one job</div><h1 className="empty-title intro-reveal">Decide what makes today count.</h1><p className="empty-copy intro-reveal">Choose one outcome worth finishing. Daymark will measure the work between this decision and the moment it is done — including every distraction that tries to steal it.</p><button className="empty-action intro-reveal" onClick={() => setGoalModal(true)}>Set today&apos;s goal</button></section>}
+          {view === "today" && !goal && <section className="empty-stage"><div className="eyebrow intro-reveal">Today has a sequence</div><h1 className="empty-title intro-reveal">Decide what makes today count.</h1><p className="empty-copy intro-reveal">Add the first outcome. You can queue more goals behind it, but Daymark only lets you work them in order.</p><button className="empty-action intro-reveal" onClick={() => setGoalModal(true)}>Add first goal</button></section>}
 
           {view === "today" && goal && <div className="today-grid">
             <section className="focus-stage">
-              <div><div className="eyebrow intro-reveal">Today&apos;s commitment</div><h1 className="goal-title intro-reveal">{goal.title}</h1>{goal.note && <p className="goal-note intro-reveal">{goal.note}</p>}</div>
+              <div><div className="eyebrow intro-reveal">Goal {goal.sequence} of {goals.length}</div><h1 className="goal-title intro-reveal">{goal.title}</h1>{goal.note && <p className="goal-note intro-reveal">{goal.note}</p>}</div>
               <div className="timer-wrap intro-reveal"><div className="status-line"><span className="status-dot" />{goal.status === "COMPLETED" ? "Achieved" : statusLabel(goal.currentStatus)}</div><div className="timer" ref={timerRef}>{formatDuration(liveFocusedMs, true)}</div><div className="timer-sub">Focused time · {formatDuration(liveElapsed)} elapsed since start</div></div>
-              {goal.status === "PLANNED" ? <div className="control-dock intro-reveal"><button className="control-button primary" disabled={busy} onClick={(event) => { animateAction(event.currentTarget); void run(() => daymarkApi.startGoal(date)); }}><Icon name="focus" /> Begin</button></div> : goal.status === "ACTIVE" ? <div className="control-dock intro-reveal">
-                <button className={`control-button ${goal.currentStatus === "FOCUS" ? "active" : ""}`} disabled={busy || goal.currentStatus === "FOCUS"} onClick={(event) => { animateAction(event.currentTarget); void run(() => daymarkApi.setStatus(date, "FOCUS"), "Back in focus."); }}><Icon name="focus" /> Focus</button>
-                <button className={`control-button ${goal.currentStatus === "BREAK" ? "active" : ""}`} disabled={busy || goal.currentStatus === "BREAK"} onClick={(event) => { animateAction(event.currentTarget); void run(() => daymarkApi.setStatus(date, "BREAK"), "Break started."); }}><Icon name="break" /> Break</button>
+              {goal.status === "PLANNED" ? <div className="control-dock intro-reveal"><button className="control-button primary" disabled={busy} onClick={(event) => { animateAction(event.currentTarget); void run(() => daymarkApi.startGoal(date, goal.id)); }}><Icon name="focus" /> Begin goal {goal.sequence}</button></div> : goal.status === "ACTIVE" ? <div className="control-dock intro-reveal">
+                <button className={`control-button ${goal.currentStatus === "FOCUS" ? "active" : ""}`} disabled={busy || goal.currentStatus === "FOCUS"} onClick={(event) => { animateAction(event.currentTarget); void run(() => daymarkApi.setStatus(date, goal.id, "FOCUS"), "Back in focus."); }}><Icon name="focus" /> Focus</button>
+                <button className={`control-button ${goal.currentStatus === "BREAK" ? "active" : ""}`} disabled={busy || goal.currentStatus === "BREAK"} onClick={(event) => { animateAction(event.currentTarget); void run(() => daymarkApi.setStatus(date, goal.id, "BREAK"), "Break started."); }}><Icon name="break" /> Break</button>
                 <button className="control-button danger" disabled={busy} onClick={(event) => { animateAction(event.currentTarget); setReasonMode("DISTRACTION"); }}><Icon name="distract" /> Distracted</button>
                 <button className="control-button" disabled={busy} onClick={(event) => { animateAction(event.currentTarget); setReasonMode("SWITCH"); }}><Icon name="switch" /> Switch</button>
                 <button className="control-button primary" disabled={busy} onClick={(event) => { animateAction(event.currentTarget); void complete(); }}><Icon name="check" /> Goal achieved</button>
-              </div> : <div className="control-dock intro-reveal"><button className="control-button primary" onClick={() => setCompletion(goal)}><Icon name="check" /> View result</button></div>}
+              </div> : <div className="control-dock intro-reveal"><button className="control-button primary" onClick={() => setCompletion(goal)}><Icon name="check" /> View result</button><button className="control-button" onClick={() => setGoalModal(true)}>Add next goal</button></div>}
             </section>
-            <aside className="side-stack"><section className="side-section"><h2 className="side-heading">Today</h2><div className="metric"><span className="metric-label">Focused</span><span className="metric-value">{formatDuration(liveFocusedMs)}</span></div><div className="metric"><span className="metric-label">Longest run</span><span className="metric-value">{formatDuration(Math.max(goal.longestFocusMs, currentOpen?.type === "FOCUS" ? currentOpen.durationMs + (now - new Date(currentOpen.startedAt).getTime()) : 0))}</span></div><div className="metric"><span className="metric-label">Interruptions</span><span className="metric-value">{goal.interruptions}</span></div><div className="metric"><span className="metric-label">Lost to distraction</span><span className="metric-value">{formatDuration(goal.distractionMs)}</span></div></section>
+
+            <aside className="side-stack">
+              <section className="side-section"><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}><h2 className="side-heading" style={{ marginBottom: 0 }}>Sequence</h2><button className="control-button" style={{ minHeight: 34, padding: "0 12px" }} onClick={() => setGoalModal(true)}>+ Add goal</button></div><div style={{ display: "grid", gap: 8, marginTop: 18 }}>{goals.map((item) => <div className="sequence-item" key={item.id} style={{ display: "grid", gridTemplateColumns: "32px minmax(0,1fr) auto", gap: 10, alignItems: "center", padding: "10px 0", borderBottom: "1px solid var(--line)" }}><span className="metric-value">{String(item.sequence).padStart(2, "0")}</span><div style={{ minWidth: 0 }}><div style={{ fontSize: 13, color: item.id === goal.id ? "var(--text)" : "var(--soft)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.title}</div><div className="field-hint" style={{ marginTop: 3 }}>{goalStateLabel(item)}</div></div><span style={{ fontSize: 11, color: item.status === "COMPLETED" ? "var(--signal)" : "var(--muted)" }}>{item.status === "COMPLETED" ? "✓" : item.status === "ACTIVE" ? "LIVE" : "NEXT"}</span></div>)}</div></section>
+              <section className="side-section"><h2 className="side-heading">Current goal</h2><div className="metric"><span className="metric-label">Focused</span><span className="metric-value">{formatDuration(liveFocusedMs)}</span></div><div className="metric"><span className="metric-label">Longest run</span><span className="metric-value">{formatDuration(Math.max(goal.longestFocusMs, currentOpen?.type === "FOCUS" ? currentOpen.durationMs + (now - new Date(currentOpen.startedAt).getTime()) : 0))}</span></div><div className="metric"><span className="metric-label">Interruptions</span><span className="metric-value">{goal.interruptions}</span></div><div className="metric"><span className="metric-label">Lost to distraction</span><span className="metric-value">{formatDuration(goal.distractionMs)}</span></div></section>
               <section className="side-section"><h2 className="side-heading">Activity</h2><div className="activity-list">{[...goal.activities].reverse().slice(0, 8).map((activity) => <div className={`activity-row ${activity.type.toLowerCase()}`} key={activity.id}><span className="activity-pip" /><span className="activity-name">{activity.reason || statusLabel(activity.type)}</span><span className="activity-time">{formatDuration(activity.durationMs + (!activity.endedAt ? now - new Date(activity.startedAt).getTime() : 0))}</span></div>)}</div></section>
             </aside>
           </div>}
 
-          {view === "history" && <section><div className="section-head"><div><div className="eyebrow">Execution archive</div><h1 className="section-title">What you finished.</h1></div></div><div className="history-list">{history.length === 0 && <div className="field-hint" style={{ padding: "28px 0" }}>No finished days yet.</div>}{history.map((item) => <article className="history-row" key={item.id}><div className="history-date">{formatShortDate(item.goalDate)}</div><div><div className="history-goal">{item.title}</div><div className="history-status">{item.status === "COMPLETED" ? "Achieved" : item.status.toLowerCase()}</div></div><div><div className="history-stat-label">Focus</div><div className="history-stat-value">{formatDuration(item.focusedMs)}</div></div><div><div className="history-stat-label">Elapsed</div><div className="history-stat-value">{formatDuration(item.elapsedMs)}</div></div><div><div className="history-stat-label">Interruptions</div><div className="history-stat-value">{item.interruptions}</div></div></article>)}</div></section>}
+          {view === "history" && <section><div className="section-head"><div><div className="eyebrow">Execution archive</div><h1 className="section-title">What you finished.</h1></div></div><div className="history-list">{history.length === 0 && <div className="field-hint" style={{ padding: "28px 0" }}>No goals yet.</div>}{history.map((item) => <article className="history-row" key={item.id}><div className="history-date">{formatShortDate(item.goalDate)} · #{item.sequence}</div><div><div className="history-goal">{item.title}</div><div className="history-status">{item.status === "COMPLETED" ? "Achieved" : item.status.toLowerCase()}</div></div><div><div className="history-stat-label">Focus</div><div className="history-stat-value">{formatDuration(item.focusedMs)}</div></div><div><div className="history-stat-label">Elapsed</div><div className="history-stat-value">{formatDuration(item.elapsedMs)}</div></div><div><div className="history-stat-label">Interruptions</div><div className="history-stat-value">{item.interruptions}</div></div></article>)}</div></section>}
 
           {view === "settings" && <section className="settings-grid"><div className="settings-copy"><div className="eyebrow">Outbound integration</div><h2>Telegram, without becoming Telegram.</h2><p>Daymark stays a standalone website. Your bot is only the accountability channel. The bot token is encrypted by the NestJS backend before it is stored and is never returned to the browser.</p></div><div><div className="settings-form"><div className="field toggle-row"><div><span className="field-label">Telegram notifications</span><div className="field-hint">Send goal and status events to your selected chat.</div></div><button className={`toggle ${telegramEnabled ? "on" : ""}`} type="button" aria-pressed={telegramEnabled} onClick={() => setTelegramEnabled((value) => !value)}><span className="toggle-thumb" /></button></div><label className="field"><span className="field-label">Bot token</span><input className="text-input" type="password" value={botToken} onChange={(event) => setBotToken(event.target.value)} placeholder={telegram?.tokenConfigured ? `Configured ${telegram.tokenHint ?? ""}` : "123456:ABC..."} autoComplete="off" /><div className="field-hint">Leave blank to keep the existing encrypted token.</div></label><label className="field"><span className="field-label">Chat ID</span><input className="text-input" value={chatId} onChange={(event) => setChatId(event.target.value)} placeholder="-1001234567890" /><div className="field-hint">Works with a private chat, group, or channel your bot can message.</div></label></div><div className="form-actions"><button className="control-button primary" disabled={busy} onClick={() => void saveTelegram()}>Save settings</button><button className="control-button" disabled={busy || !telegram?.tokenConfigured || !telegram?.chatId} onClick={() => void testTelegram()}>Send test</button></div></div></section>}
         </div>
       </main>
 
-      {goalModal && <div className="modal-layer"><div className="modal-backdrop" onClick={() => setGoalModal(false)} /><section className="modal" ref={modalRef}><div className="modal-kicker">One outcome</div><h2 className="modal-title">What must be true before today is done?</h2><label className="field"><span className="field-label">Today&apos;s goal</span><input className="text-input" autoFocus value={goalTitle} onChange={(event) => setGoalTitle(event.target.value)} placeholder="Finish Workforce mobile parity" onKeyDown={(event) => { if (event.key === "Enter" && goalTitle.trim()) void createGoal(); }} /></label><label className="field"><span className="field-label">Definition of done · optional</span><textarea className="text-area" value={goalNote} onChange={(event) => setGoalNote(event.target.value)} placeholder="What specifically counts as finished?" /></label><div className="modal-actions"><button className="control-button" onClick={() => setGoalModal(false)}>Cancel</button><button className="control-button primary" disabled={!goalTitle.trim() || busy} onClick={() => void createGoal()}>Commit to it</button></div></section></div>}
+      {goalModal && <div className="modal-layer"><div className="modal-backdrop" onClick={() => setGoalModal(false)} /><section className="modal" ref={modalRef}><div className="modal-kicker">Goal {goals.length + 1}</div><h2 className="modal-title">{goals.length === 0 ? "What must be true before today is done?" : "What comes next in the sequence?"}</h2><label className="field"><span className="field-label">Goal</span><input className="text-input" autoFocus value={goalTitle} onChange={(event) => setGoalTitle(event.target.value)} placeholder="Finish Workforce mobile parity" onKeyDown={(event) => { if (event.key === "Enter" && goalTitle.trim()) void createGoal(); }} /></label><label className="field"><span className="field-label">Definition of done · optional</span><textarea className="text-area" value={goalNote} onChange={(event) => setGoalNote(event.target.value)} placeholder="What specifically counts as finished?" /></label><div className="modal-actions"><button className="control-button" onClick={() => setGoalModal(false)}>Cancel</button><button className="control-button primary" disabled={!goalTitle.trim() || busy} onClick={() => void createGoal()}>{goals.length === 0 ? "Commit to it" : "Add to sequence"}</button></div></section></div>}
 
       {reasonMode && <div className="modal-layer"><div className="modal-backdrop" onClick={() => setReasonMode(null)} /><section className="modal" ref={modalRef}><div className="modal-kicker">{reasonMode === "DISTRACTION" ? "Record the leak" : "Intentional switch"}</div><h2 className="modal-title">{reasonMode === "DISTRACTION" ? "What pulled you away?" : "Why are you switching?"}</h2><div className="reason-grid">{(reasonMode === "DISTRACTION" ? distractionReasons : switchReasons).map((reason) => <button className="reason-button" key={reason} onClick={() => void chooseReason(reason)}>{reason}</button>)}</div><label className="field"><span className="field-label">Or write it</span><input className="text-input" value={customReason} onChange={(event) => setCustomReason(event.target.value)} placeholder="Short reason" onKeyDown={(event) => { if (event.key === "Enter" && customReason.trim()) void chooseReason(customReason.trim()); }} /></label><div className="modal-actions"><button className="control-button" onClick={() => setReasonMode(null)}>Cancel</button><button className="control-button primary" disabled={!customReason.trim()} onClick={() => void chooseReason(customReason.trim())}>Record</button></div></section></div>}
 
-      {completion && <div className="completion-layer" ref={completionRef} onClick={() => setCompletion(null)} role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Escape" || event.key === "Enter") setCompletion(null); }}>{Array.from({ length: 24 }, (_, index) => <span key={index} className="spark" style={{ transform: `rotate(${index * 15}deg) translateY(-180px)` }} />)}<div className="completion-inner"><div className="completion-kicker">Goal achieved</div><div className="completion-title">Day marked.</div><div className="completion-summary">{formatDuration(completion.focusedMs)} focused · {formatDuration(completion.elapsedMs)} elapsed · {completion.interruptions} interruptions</div></div></div>}
+      {completion && <div className="completion-layer" ref={completionRef} onClick={() => setCompletion(null)} role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Escape" || event.key === "Enter") setCompletion(null); }}>{Array.from({ length: 24 }, (_, index) => <span key={index} className="spark" style={{ transform: `rotate(${index * 15}deg) translateY(-180px)` }} />)}<div className="completion-inner"><div className="completion-kicker">Goal {completion.sequence} achieved</div><div className="completion-title">Marked.</div><div className="completion-summary">{formatDuration(completion.focusedMs)} focused · {formatDuration(completion.elapsedMs)} elapsed · {completion.interruptions} interruptions</div></div></div>}
       {toast && <div className="toast">{toast}</div>}
     </div>
   );
