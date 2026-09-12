@@ -5,10 +5,9 @@ out
 dist
 coverage
 .vercel
-.env
-.env.*
 !.env.example
 *.log
 *.tsbuildinfo
 .DS_Store
 apps/api/src/generated/prisma
+config.bat

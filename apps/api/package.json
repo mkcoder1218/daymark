@@ -3,10 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
-    "dev": "prisma generate && nest start --watch",
-    "build": "prisma generate && nest build",
-    "start": "node dist/main.js",
+    "dev": "node init && prisma generate && nest start --watch",
+    "build": "node init && prisma generate && nest build",
+    "start": "node init && node dist/main.js",
     "typecheck": "prisma generate && tsc --noEmit",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
