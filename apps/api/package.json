@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "nest start --watch",
+    "dev": "prisma generate && nest start --watch",
     "build": "prisma generate && nest build",
     "start": "node dist/main.js",
     "typecheck": "prisma generate && tsc --noEmit",

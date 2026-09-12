@@ -98,11 +98,22 @@ export function DaymarkApp() {
   }, []);
 
   useLayoutEffect(() => {
-    if (!rootRef.current || loading) return;
+    const root = rootRef.current;
+    if (!root || loading) return;
+
     const ctx = gsap.context(() => {
       const timeline = gsap.timeline({ defaults: { ease: "power3.out" } });
-      timeline.from(".rail", { x: -34, opacity: 0, duration: 0.65 }).from(".topbar", { y: -20, opacity: 0, duration: 0.55 }, "<0.12").from(".intro-reveal", { y: 36, opacity: 0, duration: 0.72, stagger: 0.075 }, "<0.08").from(".side-section", { x: 24, opacity: 0, duration: 0.55, stagger: 0.09 }, "<0.18");
-    }, rootRef);
+      const rail = root.querySelector<HTMLElement>(".rail");
+      const topbar = root.querySelector<HTMLElement>(".topbar");
+      const intro = root.querySelectorAll<HTMLElement>(".intro-reveal");
+      const sideSections = root.querySelectorAll<HTMLElement>(".side-section");
+
+      if (rail) timeline.from(rail, { x: -34, opacity: 0, duration: 0.65 });
+      if (topbar) timeline.from(topbar, { y: -20, opacity: 0, duration: 0.55 }, rail ? "<0.12" : undefined);
+      if (intro.length) timeline.from(intro, { y: 36, opacity: 0, duration: 0.72, stagger: 0.075 }, "<0.08");
+      if (sideSections.length) timeline.from(sideSections, { x: 24, opacity: 0, duration: 0.55, stagger: 0.09 }, "<0.18");
+    }, root);
+
     return () => ctx.revert();
   }, [loading]);
 
@@ -112,15 +123,19 @@ export function DaymarkApp() {
   }, [view, loading]);
 
   useLayoutEffect(() => {
-    if (!viewRef.current) return;
+    const currentView = viewRef.current;
+    if (!currentView) return;
     const selector = view === "history" ? ".history-row" : view === "settings" ? ".field, .form-actions" : ".metric, .activity-row";
-    gsap.fromTo(viewRef.current.querySelectorAll(selector), { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.42, stagger: 0.035, ease: "power3.out", clearProps: "transform" });
+    const targets = currentView.querySelectorAll<HTMLElement>(selector);
+    if (!targets.length) return;
+    gsap.fromTo(targets, { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.42, stagger: 0.035, ease: "power3.out", clearProps: "transform" });
   }, [view, history.length, telegram?.tokenConfigured]);
 
   useLayoutEffect(() => {
     if (!modalRef.current || (!goalModal && !reasonMode)) return;
     const modal = modalRef.current;
-    gsap.fromTo(modal.parentElement?.querySelector(".modal-backdrop"), { opacity: 0 }, { opacity: 1, duration: 0.24 });
+    const backdrop = modal.parentElement?.querySelector<HTMLElement>(".modal-backdrop");
+    if (backdrop) gsap.fromTo(backdrop, { opacity: 0 }, { opacity: 1, duration: 0.24 });
     gsap.fromTo(modal, { y: 34, scale: 0.965, opacity: 0 }, { y: 0, scale: 1, opacity: 1, duration: 0.46, ease: "power4.out" });
   }, [goalModal, reasonMode]);
 

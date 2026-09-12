@@ -36,7 +36,14 @@ export interface TelegramSettings {
   tokenHint: string | null;
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/v1";
+const configuredApiUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
+const API_URL = (
+  configuredApiUrl
+    ? configuredApiUrl.startsWith("/") && process.env.NODE_ENV === "development"
+      ? `http://localhost:3001${configuredApiUrl}`
+      : configuredApiUrl
+    : "http://localhost:3001/v1"
+).replace(/\/$/, "");
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
