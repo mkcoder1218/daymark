@@ -1,0 +1,17 @@
+{
+  "name": "daymark",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.15.1",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @daymark/web --filter @daymark/api dev",
+    "build": "pnpm --filter @daymark/api build && pnpm --filter @daymark/web build",
+    "typecheck": "pnpm --filter @daymark/api typecheck && pnpm --filter @daymark/web typecheck",
+    "db:generate": "pnpm --filter @daymark/api db:generate",
+    "db:migrate": "pnpm --filter @daymark/api db:migrate",
+    "db:deploy": "pnpm --filter @daymark/api db:deploy"
+  }
+}

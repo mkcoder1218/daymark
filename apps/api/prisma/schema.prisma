@@ -1,0 +1,58 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum GoalStatus {
+  PLANNED
+  ACTIVE
+  COMPLETED
+}
+
+enum ActivityType {
+  FOCUS
+  BREAK
+  DISTRACTION
+  SWITCH
+}
+
+model Goal {
+  id          String       @id @default(cuid())
+  goalDate    String       @unique
+  title       String
+  note        String?
+  status      GoalStatus   @default(PLANNED)
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  activities  Activity[]
+
+  @@index([createdAt])
+}
+
+model Activity {
+  id        String       @id @default(cuid())
+  goalId    String
+  type      ActivityType
+  reason    String?
+  startedAt DateTime     @default(now())
+  endedAt   DateTime?
+  createdAt DateTime     @default(now())
+  goal      Goal         @relation(fields: [goalId], references: [id], onDelete: Cascade)
+
+  @@index([goalId, startedAt])
+}
+
+model AppSettings {
+  id                        String   @id @default("primary")
+  telegramEnabled           Boolean  @default(false)
+  telegramBotTokenEncrypted String?
+  telegramChatId            String?
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+}
