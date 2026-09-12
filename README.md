@@ -97,18 +97,71 @@ The root `.env` is loaded by Next.js, NestJS, and Prisma during local developmen
 
 Use `.env.example` as the complete template. Never commit the real `.env` file.
 
-## Vercel
+## CI/CD
 
-Create two Vercel projects from the same repository:
+GitHub Actions runs `.github/workflows/ci.yml` for pushes and pull requests targeting `main`.
 
-1. Web project root directory: `apps/web`
-2. API project root directory: `apps/api`
+CI performs:
 
-The root `.env` is for local development only. In Vercel, add the same variables through each project's Environment Variables settings:
+1. dependency installation
+2. Prisma client generation through the API typecheck/build scripts
+3. TypeScript checks for API and web
+4. production builds for API and web
 
-- Web project: `NEXT_PUBLIC_API_URL`
-- API project: `DATABASE_URL`, optional `DIRECT_URL`, `WEB_ORIGIN`, `SETTINGS_ENCRYPTION_KEY`, and `JWT_SECRET`
+The CI environment uses non-production placeholder secrets and a dummy PostgreSQL URL. It does not connect to or modify the production Neon database.
 
-Vercel supplies its own runtime `PORT` in production. Daymark uses `API_PORT` only for local development.
+Vercel Git Integration is the CD layer:
 
-Run `pnpm --filter @daymark/api db:deploy` against the production database when schema migrations change.
+- pushes to `main` create production deployments
+- pull requests and non-production branches create preview deployments
+- the web and API are separate Vercel projects connected to the same GitHub repository
+
+Database migrations are intentionally not run inside Vercel preview builds. Run `pnpm db:deploy` against the production database whenever committed Prisma migrations change.
+
+## Vercel deployment
+
+Create two Vercel projects from `mkcoder1218/daymark` in the same Vercel team.
+
+### 1. API project
+
+Recommended project name: `daymark-api`
+
+- Root Directory: `apps/api`
+- Production Branch: `main`
+- Node.js: `22.x`
+
+Production environment variables:
+
+- `DATABASE_URL`: Neon pooled production connection string
+- `DIRECT_URL`: Neon direct connection string
+- `WEB_ORIGIN`: the final Daymark web production URL
+- `SETTINGS_ENCRYPTION_KEY`: production encryption secret
+- `JWT_SECRET`: production session-signing secret
+
+Do not set `PORT` or `API_PORT` in Vercel production. Vercel supplies the runtime port.
+
+### 2. Web project
+
+Recommended project name: `daymark-web`
+
+- Root Directory: `apps/web`
+- Framework Preset: Next.js
+- Production Branch: `main`
+- Node.js: `22.x`
+
+Production environment variable:
+
+- `NEXT_PUBLIC_API_URL=https://<daymark-api-domain>/v1`
+
+After both projects have production domains, set `WEB_ORIGIN` on the API project to the exact web origin, then redeploy the API.
+
+### Deployment order
+
+1. Apply production migrations with `pnpm db:deploy`.
+2. Create/deploy the API project.
+3. Copy the API production URL into the web project's `NEXT_PUBLIC_API_URL`.
+4. Create/deploy the web project.
+5. Copy the web production origin into the API project's `WEB_ORIGIN`.
+6. Redeploy the API once so CORS uses the final web origin.
+
+The root `.env` is for local development only. Vercel environment variables belong in the corresponding Vercel project settings.
