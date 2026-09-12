@@ -123,6 +123,7 @@ export function DaymarkApp() {
   const viewRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<HTMLDivElement>(null);
   const modalRef = useRef<HTMLDivElement>(null);
+  const authModalRef = useRef<HTMLFormElement>(null);
   const completionRef = useRef<HTMLDivElement>(null);
   const authRef = useRef<HTMLDivElement>(null);
   const setDate = useMemo(localDateKey, []);
@@ -227,8 +228,8 @@ export function DaymarkApp() {
   }, [view, history.length, goals.length, telegram?.tokenConfigured, periodReport?.anchor, periodReport?.period]);
 
   useLayoutEffect(() => {
-    if (!modalRef.current || (!goalModal && !reasonMode && !authMode)) return;
-    const modal = modalRef.current;
+    const modal = authMode ? authModalRef.current : modalRef.current;
+    if (!modal || (!goalModal && !reasonMode && !authMode)) return;
     const backdrop = modal.parentElement?.querySelector<HTMLElement>(".modal-backdrop");
     if (backdrop) gsap.fromTo(backdrop, { opacity: 0 }, { opacity: 1, duration: 0.24 });
     gsap.fromTo(modal, { y: 34, scale: 0.965, opacity: 0 }, { y: 0, scale: 1, opacity: 1, duration: 0.46, ease: "power4.out" });
@@ -509,7 +510,7 @@ export function DaymarkApp() {
           </div>
         </div>
 
-        {authMode && <div className="modal-layer"><div className="modal-backdrop" onClick={() => setAuthMode(null)} /><form className="modal" ref={modalRef} onSubmit={(event) => void submitAuth(event)}><div className="modal-kicker">{authMode === "signup" ? "Create your Daymark" : "Welcome back"}</div><h2 className="modal-title">{authMode === "signup" ? "Start measuring the work that matters." : "Continue where you left off."}</h2>{authMode === "signup" && <label className="field"><span className="field-label">Full name</span><input className="text-input" autoFocus value={authFullName} onChange={(event) => setAuthFullName(event.target.value)} autoComplete="name" /></label>}<label className="field"><span className="field-label">Email</span><input className="text-input" type="email" autoFocus={authMode === "login"} value={authEmail} onChange={(event) => setAuthEmail(event.target.value)} autoComplete="email" /></label><label className="field"><span className="field-label">Password</span><input className="text-input" type="password" value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} autoComplete={authMode === "signup" ? "new-password" : "current-password"} /></label>{authMode === "signup" && <label className="field"><span className="field-label">Confirm password</span><input className="text-input" type="password" value={authConfirmPassword} onChange={(event) => setAuthConfirmPassword(event.target.value)} autoComplete="new-password" /></label>}<div className="modal-actions auth-modal-actions"><button className="control-button" type="button" onClick={() => setAuthMode(authMode === "signup" ? "login" : "signup")}>{authMode === "signup" ? "I already have an account" : "Create an account"}</button><button className="control-button primary" type="submit" disabled={busy || !authEmail.trim() || !authPassword || (authMode === "signup" && (!authFullName.trim() || !authConfirmPassword))}>{authMode === "signup" ? "Create account" : "Sign in"}</button></div></form></div>}
+        {authMode && <div className="modal-layer"><div className="modal-backdrop" onClick={() => setAuthMode(null)} /><form className="modal" ref={authModalRef} onSubmit={(event) => void submitAuth(event)}><div className="modal-kicker">{authMode === "signup" ? "Create your Daymark" : "Welcome back"}</div><h2 className="modal-title">{authMode === "signup" ? "Start measuring the work that matters." : "Continue where you left off."}</h2>{authMode === "signup" && <label className="field"><span className="field-label">Full name</span><input className="text-input" autoFocus value={authFullName} onChange={(event) => setAuthFullName(event.target.value)} autoComplete="name" /></label>}<label className="field"><span className="field-label">Email</span><input className="text-input" type="email" autoFocus={authMode === "login"} value={authEmail} onChange={(event) => setAuthEmail(event.target.value)} autoComplete="email" /></label><label className="field"><span className="field-label">Password</span><input className="text-input" type="password" value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} autoComplete={authMode === "signup" ? "new-password" : "current-password"} /></label>{authMode === "signup" && <label className="field"><span className="field-label">Confirm password</span><input className="text-input" type="password" value={authConfirmPassword} onChange={(event) => setAuthConfirmPassword(event.target.value)} autoComplete="new-password" /></label>}<div className="modal-actions auth-modal-actions"><button className="control-button" type="button" onClick={() => setAuthMode(authMode === "signup" ? "login" : "signup")}>{authMode === "signup" ? "I already have an account" : "Create an account"}</button><button className="control-button primary" type="submit" disabled={busy || !authEmail.trim() || !authPassword || (authMode === "signup" && (!authFullName.trim() || !authConfirmPassword))}>{authMode === "signup" ? "Create account" : "Sign in"}</button></div></form></div>}
         {toast && <div className="toast">{toast}</div>}
       </div>
     );
